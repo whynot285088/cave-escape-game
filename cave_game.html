@@ -1,0 +1,618 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>동굴 탈출</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Noto+Serif+KR:wght@400;700;900&family=MedievalSharp&display=swap');
+
+  :root {
+    --stone: #2a2318;
+    --stone-mid: #3d3425;
+    --stone-light: #5c4f38;
+    --stone-highlight: #7a6a4f;
+    --moss: #4a5e3a;
+    --torch: #e8a030;
+    --torch-glow: rgba(232, 160, 48, 0.3);
+    --danger: #c0392b;
+    --gold: #d4af37;
+    --text-light: #f0e6c8;
+    --text-dim: #a89060;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: #0d0a06;
+    font-family: 'Noto Serif KR', serif;
+    color: var(--text-light);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    overflow-x: hidden;
+  }
+
+  /* ── 배경 텍스처 ── */
+  body::before {
+    content: '';
+    position: fixed; inset: 0;
+    background:
+      radial-gradient(ellipse at 50% 0%, rgba(232,160,48,.08) 0%, transparent 60%),
+      repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,.15) 2px, rgba(0,0,0,.15) 4px);
+    pointer-events: none; z-index: 0;
+  }
+
+  #game {
+    position: relative; z-index: 1;
+    width: 100%; max-width: 900px;
+    padding: 20px 16px 40px;
+    display: flex; flex-direction: column; align-items: center; gap: 0;
+  }
+
+  /* ── 상단 HUD ── */
+  #hud {
+    width: 100%;
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 10px 20px;
+    border-bottom: 1px solid var(--stone-highlight);
+    margin-bottom: 10px;
+  }
+  #hud .title {
+    font-size: 1.4rem; font-weight: 900; letter-spacing: 0.15em;
+    color: var(--gold);
+    text-shadow: 0 0 20px rgba(212,175,55,.6);
+  }
+  #progress-wrap { display: flex; gap: 8px; align-items: center; }
+  .prog-gem {
+    width: 22px; height: 22px; border-radius: 50%;
+    border: 2px solid var(--stone-highlight);
+    background: var(--stone-mid);
+    transition: all .4s;
+  }
+  .prog-gem.filled {
+    background: radial-gradient(circle at 35% 35%, #ffe066, var(--gold));
+    border-color: var(--gold);
+    box-shadow: 0 0 10px rgba(212,175,55,.8);
+  }
+
+  /* ── 동굴 입구 SVG 영역 ── */
+  #cave-scene {
+    width: 100%;
+    position: relative;
+    margin-bottom: 0;
+  }
+
+  canvas#caveCanvas {
+    display: block;
+    width: 100%;
+    height: auto;
+  }
+
+  /* ── 선택 버튼 ── */
+  #choices {
+    width: 100%;
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 0;
+    position: relative;
+  }
+
+  .choice-btn {
+    position: relative;
+    padding: 18px 8px 20px;
+    background: linear-gradient(180deg, #1a1208 0%, #0d0a06 100%);
+    border: none;
+    color: var(--text-light);
+    font-family: 'Noto Serif KR', serif;
+    font-size: 0.95rem;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    cursor: pointer;
+    transition: all .25s;
+    border-top: 2px solid var(--stone-mid);
+  }
+  .choice-btn:hover {
+    background: linear-gradient(180deg, #2a1e0a 0%, #1a1208 100%);
+    color: var(--gold);
+  }
+  .choice-btn:active { transform: translateY(2px); }
+  .choice-btn .icon { font-size: 1.6rem; display: block; margin-bottom: 6px; }
+  .choice-btn .label { display: block; }
+
+  /* ── 메시지 패널 ── */
+  #msg-panel {
+    width: 100%;
+    min-height: 160px;
+    background: rgba(20, 15, 8, 0.95);
+    border: 1px solid var(--stone-highlight);
+    border-top: 3px solid var(--gold);
+    padding: 24px 28px;
+    margin-top: 0;
+    position: relative;
+  }
+  #msg-panel::before {
+    content: '';
+    position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+    background: repeating-linear-gradient(90deg, transparent, transparent 3px, rgba(255,255,255,.01) 3px, rgba(255,255,255,.01) 6px);
+    pointer-events: none;
+  }
+
+  #narrative {
+    font-size: 1.05rem; line-height: 1.9;
+    color: var(--text-light);
+    min-height: 80px;
+  }
+  #narrative .flavor { color: var(--text-dim); font-style: italic; font-size: .9rem; }
+  #narrative .trap-name { color: #e05a40; font-weight: 900; font-size: 1.1rem; }
+  #narrative .success { color: #7ec87e; font-weight: 700; }
+  #narrative .escape { color: var(--gold); font-weight: 900; font-size: 1.2rem; }
+
+  /* ── 하단 버튼들 ── */
+  #action-row {
+    width: 100%;
+    display: flex; justify-content: flex-end; align-items: center;
+    padding: 12px 0 0;
+    gap: 12px;
+  }
+
+  .btn-ui {
+    padding: 10px 24px;
+    border: 1px solid var(--stone-highlight);
+    background: transparent;
+    color: var(--text-dim);
+    font-family: 'Noto Serif KR', serif;
+    font-size: .85rem;
+    letter-spacing: .08em;
+    cursor: pointer;
+    transition: all .2s;
+  }
+  .btn-ui:hover { border-color: var(--gold); color: var(--gold); }
+  .btn-ui.primary {
+    background: var(--gold); color: #1a1208;
+    border-color: var(--gold); font-weight: 900;
+  }
+  .btn-ui.primary:hover { background: #e8c040; }
+
+  /* ── 횃불 애니메이션 ── */
+  @keyframes flicker {
+    0%,100% { opacity:1; transform: scaleY(1) skewX(0deg); }
+    25% { opacity:.8; transform: scaleY(1.05) skewX(-2deg); }
+    50% { opacity:.95; transform: scaleY(.97) skewX(1deg); }
+    75% { opacity:.85; transform: scaleY(1.02) skewX(-1deg); }
+  }
+  .torch-flame { animation: flicker .6s ease-in-out infinite; transform-origin: bottom center; }
+
+  /* ── 죽음/클리어 오버레이 ── */
+  #overlay {
+    display: none;
+    position: fixed; inset: 0; z-index: 100;
+    background: rgba(0,0,0,.85);
+    flex-direction: column; align-items: center; justify-content: center;
+    gap: 20px;
+  }
+  #overlay.show { display: flex; }
+  #overlay h2 { font-size: 2.2rem; font-weight: 900; }
+  #overlay h2.dead { color: var(--danger); text-shadow: 0 0 30px rgba(192,57,43,.7); }
+  #overlay h2.win { color: var(--gold); text-shadow: 0 0 30px rgba(212,175,55,.7); }
+  #overlay p { color: var(--text-dim); font-size: 1rem; text-align: center; max-width: 400px; line-height: 1.8; }
+
+  /* ── 진입 애니메이션 ── */
+  @keyframes fadeIn { from{opacity:0;transform:translateY(10px)} to{opacity:1;transform:none} }
+  #narrative { animation: fadeIn .4s ease; }
+
+  /* depth indicator */
+  #depth-label { color: var(--text-dim); font-size: .8rem; letter-spacing: .1em; }
+</style>
+</head>
+<body>
+
+<div id="game">
+
+  <!-- HUD -->
+  <div id="hud">
+    <div class="title">⛏ 동굴 탈출</div>
+    <div id="progress-wrap">
+      <div id="depth-label">탈출까지</div>
+      <div class="prog-gem" id="g0"></div>
+      <div class="prog-gem" id="g1"></div>
+      <div class="prog-gem" id="g2"></div>
+      <div class="prog-gem" id="g3"></div>
+      <div class="prog-gem" id="g4"></div>
+    </div>
+  </div>
+
+  <!-- 동굴 캔버스 -->
+  <div id="cave-scene">
+    <canvas id="caveCanvas"></canvas>
+  </div>
+
+  <!-- 길 선택 버튼 -->
+  <div id="choices">
+    <button class="choice-btn" onclick="choose(0)">
+      <span class="icon">🡸</span>
+      <span class="label">왼쪽 통로</span>
+    </button>
+    <button class="choice-btn" onclick="choose(1)">
+      <span class="icon">▲</span>
+      <span class="label">가운데 통로</span>
+    </button>
+    <button class="choice-btn" onclick="choose(2)">
+      <span class="icon">🡺</span>
+      <span class="label">오른쪽 통로</span>
+    </button>
+  </div>
+
+  <!-- 메시지 패널 -->
+  <div id="msg-panel">
+    <div id="narrative"></div>
+    <div id="action-row">
+      <button class="btn-ui" id="resetBtn" onclick="resetGame()" style="display:none">↺ 처음부터</button>
+      <button class="btn-ui primary" id="nextBtn" onclick="nextDepth()" style="display:none">계속 전진 →</button>
+    </div>
+  </div>
+
+</div>
+
+<!-- 오버레이 -->
+<div id="overlay">
+  <h2 id="overlay-title"></h2>
+  <p id="overlay-msg"></p>
+  <button class="btn-ui primary" onclick="resetGame()">↺ 다시 시작</button>
+</div>
+
+<script>
+// ── 동굴 캔버스 그리기 ──────────────────────────────────────────────────
+const canvas = document.getElementById('caveCanvas');
+const ctx = canvas.getContext('2d');
+
+const BRICKW = 30, BRICKH = 18, GAP = 3;
+const BW = BRICKW + GAP, BH = BRICKH + GAP;
+
+function drawBrick(x, y, shade) {
+  // 돌 그라데이션
+  const grad = ctx.createLinearGradient(x, y, x+BRICKW, y+BRICKH);
+  grad.addColorStop(0, shade[0]);
+  grad.addColorStop(1, shade[1]);
+  ctx.fillStyle = grad;
+  ctx.beginPath();
+  ctx.roundRect(x, y, BRICKW, BRICKH, 2);
+  ctx.fill();
+  // 하이라이트
+  ctx.strokeStyle = shade[2];
+  ctx.lineWidth = .8;
+  ctx.beginPath();
+  ctx.roundRect(x, y, BRICKW, BRICKH, 2);
+  ctx.stroke();
+  // 내부 그림자
+  ctx.strokeStyle = 'rgba(0,0,0,.4)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(x+1, y+BRICKH-1); ctx.lineTo(x+BRICKW-1, y+BRICKH-1);
+  ctx.moveTo(x+BRICKW-1, y+1); ctx.lineTo(x+BRICKW-1, y+BRICKH-1);
+  ctx.stroke();
+}
+
+function brickShade(type) {
+  if (type === 'dark')  return ['#2a2318','#1a1510','#3d3425'];
+  if (type === 'mid')   return ['#3d3425','#2a2318','#5c4f38'];
+  if (type === 'light') return ['#5c4f38','#3d3425','#7a6a4f'];
+  if (type === 'moss')  return ['#3a4a2e','#2a3820','#4a5e3a'];
+  return ['#2a2318','#1a1510','#3d3425'];
+}
+
+function drawArch(centerX, topY, width, height, ctx, shade) {
+  // 아치를 이루는 벽돌 좌표들 계산
+  const bricks = [];
+  const rx = width / 2, ry = height;
+  const steps = 14; // 아치 상단 곡선 단계
+  // 아치 곡선 상단
+  for (let i = 0; i <= steps; i++) {
+    const angle = Math.PI + (Math.PI * i / steps); // 180° → 360°
+    const bx = centerX + rx * Math.cos(angle) - BRICKW/2;
+    const by = topY + ry + ry * Math.sin(angle) - BRICKH/2;
+    bricks.push([bx, by]);
+  }
+  bricks.forEach(([bx,by]) => drawBrick(bx, by, shade));
+}
+
+function buildCave() {
+  const W = canvas.offsetWidth || 900;
+  const H = 340;
+  canvas.width = W;
+  canvas.height = H;
+
+  ctx.clearRect(0, 0, W, H);
+
+  // 배경 — 동굴 내벽 느낌
+  const bg = ctx.createRadialGradient(W/2, H, 0, W/2, H*.3, H*1.2);
+  bg.addColorStop(0, '#0d0a06');
+  bg.addColorStop(1, '#060402');
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, W, H);
+
+  const third = W / 3;
+  const archCenters = [third * 0.5, third * 1.5, third * 2.5];
+  const archW = third * 0.72;
+  const archH = H * 0.42;
+
+  // 기둥과 벽 벽돌 — 아치들 사이
+  function drawWallSection(x1, x2, maxRows) {
+    for (let col = 0; col < Math.floor((x2 - x1) / BW); col++) {
+      const cx = x1 + col * BW;
+      for (let row = 0; row < maxRows; row++) {
+        const cy = H - (row + 1) * BH;
+        const shade = row % 3 === 0 ? brickShade('light') : row % 3 === 1 ? brickShade('mid') : brickShade('dark');
+        drawBrick(cx, cy, shade);
+      }
+    }
+  }
+
+  // 바닥 벽돌 전체
+  for (let col = 0; col < Math.ceil(W / BW); col++) {
+    for (let row = 0; row < 2; row++) {
+      const cx = col * BW;
+      const cy = H - (row + 1) * BH;
+      drawBrick(cx, cy, brickShade(row === 0 ? 'light' : 'mid'));
+    }
+  }
+
+  // 각 아치 입구
+  archCenters.forEach((cx, idx) => {
+    const halfW = archW / 2;
+    const archTop = H * (idx === 1 ? 0.08 : 0.12); // 가운데가 약간 더 높음
+    const archBottom = H - BH * 2;
+    const archHeight = archBottom - archTop;
+
+    // 아치 내부 (어두운 동굴 공간)
+    ctx.fillStyle = '#04030200';
+    const innerGrad = ctx.createRadialGradient(cx, archBottom, 0, cx, archTop + archHeight*.3, archHeight*.8);
+    innerGrad.addColorStop(0, 'rgba(232,160,48,.06)');
+    innerGrad.addColorStop(1, 'rgba(0,0,0,0.95)');
+    ctx.beginPath();
+    ctx.ellipse(cx, archBottom, halfW - BW, archHeight*.6, 0, Math.PI, 0);
+    ctx.lineTo(cx + halfW - BW, archBottom);
+    ctx.lineTo(cx - halfW + BW, archBottom);
+    ctx.closePath();
+    ctx.fillStyle = innerGrad;
+    ctx.fill();
+
+    // 아치 벽돌 — 반원 경로를 따라 배치
+    const numBricks = idx === 1 ? 15 : 13;
+    for (let i = 0; i <= numBricks; i++) {
+      const angle = Math.PI * (1 - i / numBricks);
+      const bx = cx + (halfW - BW/2) * Math.cos(angle) - BRICKW/2;
+      const by = archBottom + (archHeight * .55) * Math.sin(angle) - BRICKH/2;
+      const t = Math.abs(i - numBricks/2) / (numBricks/2);
+      const shade = t > 0.6 ? brickShade('light') : t > 0.3 ? brickShade('mid') : brickShade('dark');
+      drawBrick(bx, by, shade);
+    }
+
+    // 측면 기둥 벽돌 (왼쪽)
+    const pillarRows = Math.floor((archBottom - archTop * 1.5) / BH);
+    for (let r = 0; r < pillarRows; r++) {
+      const py = archBottom - r * BH;
+      drawBrick(cx - halfW - BW * 0.3, py, brickShade(r%2 === 0 ? 'mid' : 'light'));
+      drawBrick(cx + halfW - BW * 0.7, py, brickShade(r%2 === 0 ? 'mid' : 'light'));
+    }
+
+    // 이끼 디테일 (왼쪽 기둥 몇 군데)
+    if (Math.random() > 0.3) {
+      drawBrick(cx - halfW - BW*.3, archBottom - BH * 2, brickShade('moss'));
+    }
+  });
+
+  // 천장 벽돌 (상단 전체)
+  for (let col = 0; col < Math.ceil(W / BW) + 1; col++) {
+    for (let row = 0; row < 3; row++) {
+      const cx = col * BW - BW/2;
+      const cy = row * BH;
+      drawBrick(cx, cy, row === 0 ? brickShade('dark') : brickShade('mid'));
+    }
+  }
+
+  // 횃불 — 아치 사이 기둥에
+  drawTorch(third - BW * 1.2, H * 0.48);
+  drawTorch(third * 2 + BW * .2, H * 0.48);
+
+  // 원거리 조명 블러 효과
+  archCenters.forEach(cx => {
+    const glow = ctx.createRadialGradient(cx, H*.5, 0, cx, H*.5, archW*.4);
+    glow.addColorStop(0, 'rgba(232,160,48,.07)');
+    glow.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = glow;
+    ctx.fillRect(0, 0, W, H);
+  });
+}
+
+function drawTorch(x, y) {
+  // 횃불 자루
+  ctx.fillStyle = '#6b4c1e';
+  ctx.fillRect(x - 3, y, 6, 28);
+  // 불꽃
+  ctx.save();
+  ctx.translate(x, y);
+  const flameGrad = ctx.createRadialGradient(0, -16, 2, 0, -10, 14);
+  flameGrad.addColorStop(0, '#fff5c0');
+  flameGrad.addColorStop(0.3, '#e8a030');
+  flameGrad.addColorStop(1, 'rgba(200,50,0,0)');
+  ctx.fillStyle = flameGrad;
+  ctx.beginPath();
+  ctx.moveTo(0, 0);
+  ctx.bezierCurveTo(-8, -10, -6, -22, 0, -28);
+  ctx.bezierCurveTo(6, -22, 8, -10, 0, 0);
+  ctx.fill();
+  // 빛 번짐
+  const halo = ctx.createRadialGradient(0, -12, 0, 0, -12, 36);
+  halo.addColorStop(0, 'rgba(232,160,48,.18)');
+  halo.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = halo;
+  ctx.beginPath();
+  ctx.arc(0, -12, 36, 0, Math.PI*2);
+  ctx.fill();
+  ctx.restore();
+}
+
+// ── 게임 로직 ───────────────────────────────────────────────────────────
+const TRAPS = [
+  {
+    name: '화살 함정',
+    icon: '🏹',
+    msgs: [
+      '벽 사이로 수십 개의 화살이 쏟아집니다.',
+      '숨겨진 발판을 밟는 순간, 화살이 사방에서 날아옵니다.',
+      '천장의 작은 구멍에서 독화살이 비처럼 쏟아집니다.'
+    ]
+  },
+  {
+    name: '화염 함정',
+    icon: '🔥',
+    msgs: [
+      '바닥의 화염 분사기가 갑작스레 작동합니다. 온몸이 불길에 휩싸입니다.',
+      '통로 벽에서 거대한 불기둥이 뿜어져 나옵니다.',
+      '천장에서 불타는 기름이 쏟아져 내립니다.'
+    ]
+  },
+  {
+    name: '낭떠러지',
+    icon: '🕳️',
+    msgs: [
+      '발 아래 바닥이 무너지며 끝이 보이지 않는 심연으로 추락합니다.',
+      '위장된 함정문이 열리며 깊은 구덩이 속으로 빠집니다.',
+      '발판이 사라지며 지하 깊숙이 떨어집니다. 바닥이 없습니다.'
+    ]
+  },
+  {
+    name: '거대한 돌',
+    icon: '🪨',
+    msgs: [
+      '천장이 흔들리더니 거대한 바위가 굴러떨어집니다.',
+      '뒤에서 무게만 수 톤의 돌덩이가 猛烈히 굴러옵니다.',
+      '양쪽 벽이 좁아지며 수많은 돌이 쏟아집니다.'
+    ]
+  }
+];
+
+const SAFE_MSGS = [
+  '조심스레 발을 내딛자 아무 일도 일어나지 않습니다. 안전한 길이었습니다.',
+  '횃불 냄새와 흙 냄새가 진동하는 통로를 무사히 빠져나옵니다.',
+  '이 통로에는 아무런 위험이 없었습니다. 한 발 더 나아갑니다.',
+  '멀리서 바람 소리가 들려옵니다. 출구가 가까워지고 있습니다.',
+  '발밑을 살피며 천천히 이동하자, 안전하게 통과합니다.'
+];
+
+const DEPTH_FLAVOR = [
+  '어둠 속으로 첫 발을 내딛습니다. 뒤에서 입구의 빛이 사라집니다.',
+  '더 깊은 곳으로 이어지는 갈림길 앞에 섰습니다.',
+  '동굴 공기가 점점 차가워집니다. 절반이나 왔습니다.',
+  '거의 다 왔습니다. 앞에 희미한 빛이 보이는 것 같습니다.',
+  '마지막 갈림길입니다. 신중하게 선택하십시오.'
+];
+
+let depth = 0;
+let waiting = false;
+
+function updateGems() {
+  for (let i = 0; i < 5; i++) {
+    document.getElementById('g'+i).classList.toggle('filled', i < depth);
+  }
+}
+
+function setNarrative(html) {
+  const el = document.getElementById('narrative');
+  el.innerHTML = html;
+  el.style.animation = 'none';
+  requestAnimationFrame(() => { el.style.animation = ''; });
+}
+
+function showButtons(reset, next) {
+  document.getElementById('resetBtn').style.display = reset ? '' : 'none';
+  document.getElementById('nextBtn').style.display = next ? '' : 'none';
+}
+
+function lockChoices(locked) {
+  document.querySelectorAll('.choice-btn').forEach(b => b.disabled = locked);
+}
+
+function choose(path) {
+  if (waiting) return;
+  waiting = true;
+  lockChoices(true);
+
+  // 함정 확률: 40%
+  const isTrap = Math.random() < 0.40;
+  const pathNames = ['왼쪽', '가운데', '오른쪽'];
+
+  if (isTrap) {
+    const trap = TRAPS[Math.floor(Math.random() * TRAPS.length)];
+    const msg = trap.msgs[Math.floor(Math.random() * trap.msgs.length)];
+    setNarrative(
+      `<span class="flavor">${pathNames[path]} 통로를 선택했습니다.</span><br><br>` +
+      `<span class="trap-name">${trap.icon} ${trap.name}!</span><br><br>` +
+      `${msg}<br><br>` +
+      `<span style="color:#888;font-size:.9rem">— 당신은 동굴에서 목숨을 잃었습니다.</span>`
+    );
+    showButtons(true, false);
+  } else {
+    depth++;
+    updateGems();
+    const safeMsg = SAFE_MSGS[Math.floor(Math.random() * SAFE_MSGS.length)];
+
+    if (depth >= 5) {
+      setNarrative(
+        `<span class="flavor">${pathNames[path]} 통로를 선택했습니다.</span><br><br>` +
+        `${safeMsg}<br><br>` +
+        `<span class="escape">🌟 마침내 동굴 밖으로 탈출했습니다! 눈부신 햇빛이 눈을 감게 합니다.</span>`
+      );
+      showButtons(false, false);
+      setTimeout(() => showWin(), 1200);
+    } else {
+      const flavor = DEPTH_FLAVOR[depth - 1] || '';
+      setNarrative(
+        `<span class="flavor">${pathNames[path]} 통로를 선택했습니다.</span><br><br>` +
+        `<span class="success">✓ 무사히 통과!</span> ${safeMsg}<br><br>` +
+        `<span class="flavor">${flavor}</span>`
+      );
+      showButtons(false, true);
+    }
+  }
+}
+
+function nextDepth() {
+  waiting = false;
+  lockChoices(false);
+  showButtons(false, false);
+  setNarrative(`<span class="flavor">${DEPTH_FLAVOR[depth] || '갈림길 앞에 섰습니다. 어느 통로를 선택하겠습니까?'}</span>`);
+}
+
+function resetGame() {
+  depth = 0;
+  waiting = false;
+  updateGems();
+  lockChoices(false);
+  showButtons(false, false);
+  document.getElementById('overlay').classList.remove('show');
+  setNarrative(`<span class="flavor">캄캄한 동굴 앞에 섰습니다. 세 갈림길 중 하나를 선택해 앞으로 나아가십시오.<br>5번 연속 통과하면 탈출할 수 있습니다.</span>`);
+}
+
+function showWin() {
+  const ov = document.getElementById('overlay');
+  document.getElementById('overlay-title').className = 'win';
+  document.getElementById('overlay-title').textContent = '🏆 탈출 성공!';
+  document.getElementById('overlay-msg').textContent = '5개의 통로를 모두 통과하여 동굴에서 살아나왔습니다. 당신의 용기와 직감이 목숨을 구했습니다.';
+  ov.classList.add('show');
+}
+
+// ── 초기화 ───────────────────────────────────────────────────────────────
+window.addEventListener('load', () => {
+  buildCave();
+  resetGame();
+});
+
+window.addEventListener('resize', () => {
+  buildCave();
+});
+</script>
+</body>
+</html>
